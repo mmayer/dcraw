@@ -2186,7 +2186,7 @@ void nef_parse_makernote()
   order = sorder;
 }
 
-void mrw_parse_makernote(int base)
+void nef_parse_exif()
 {
   int entries, tag, type, len, val, save;
 
@@ -2197,33 +2197,9 @@ void mrw_parse_makernote(int base)
     len  = fget4(ifp);
     val  = fget4(ifp);
     save = ftell(ifp);
-    if (tag == 3) {
-      fseek (ifp, base+val + 112, SEEK_SET);
-      camera_red  = fget4(ifp);
-      camera_red /= (camera_blue = fget4(ifp));
-      camera_blue = fget4(ifp) / camera_blue;
-    }
-    fseek (ifp, save, SEEK_SET);
-  }
-}
-
-void nef_parse_exif(int base)
-{
-  int entries, tag, type, len, val, save;
-
-  entries = fget2(ifp);
-  while (entries--) {
-    tag  = fget2(ifp);
-    type = fget2(ifp);
-    len  = fget4(ifp);
-    val  = fget4(ifp);
-    save = ftell(ifp);
-    if (tag == 0x927c) {
-      fseek (ifp, val+base, SEEK_SET);
-      if (!strncmp(make,"NIKON",5))
-	nef_parse_makernote();
-      else if (strstr(make,"Minolta"))
-	mrw_parse_makernote(base);
+    if (tag == 0x927c && !strncmp(make,"NIKON",5)) {
+      fseek (ifp, val, SEEK_SET);
+      nef_parse_makernote();
       fseek (ifp, save, SEEK_SET);
     }
   }
@@ -2278,7 +2254,8 @@ void parse_tiff(int base)
 	    make[0] = 0;
 	  break;
 	case 330:			/* SubIFD tag */
-	  if (len > 2) len=2;
+	  if (len > 2 && !strcmp(make,"Kodak"))
+	      len = 2;
 	  if (len > 1)
 	    while (len--) {
 	      fseek (ifp, val+base, SEEK_SET);
@@ -2290,7 +2267,7 @@ void parse_tiff(int base)
 	    tiff_parse_subifd(base);
 	  break;
 	case 0x8769:			/* Nikon EXIF tag */
-	  nef_parse_exif(base);
+	  nef_parse_exif();
 	  break;
       }
       fseek (ifp, save, SEEK_SET);
@@ -2662,6 +2639,13 @@ int identify()
     fseek (ifp, 24, SEEK_SET);
     raw_height = fget2(ifp);
     raw_width  = fget2(ifp);
+    fseek (ifp, 12, SEEK_SET);			/* PRD */
+    fseek (ifp, fget4(ifp) +  4, SEEK_CUR);	/* TTW */
+    fseek (ifp, fget4(ifp) + 12, SEEK_CUR);	/* WBG */
+    camera_red  = fget2(ifp);
+    camera_red /= fget2(ifp);
+    camera_blue = fget2(ifp);
+    camera_blue = fget2(ifp) / camera_blue;
   } else if (!memcmp (head,"BM",2)) {
     data_offset = 0x1000;
     order = 0x4949;
@@ -3003,8 +2987,8 @@ coolpix:
     load_raw = be_low_12_load_raw;
     if (!strncmp(model,"DiMAGE A",8))
       load_raw = packed_12_load_raw;
-    pre_mul[0] = 1.57;
-    pre_mul[2] = 1.42;
+    pre_mul[0] = 2.00;
+    pre_mul[2] = 1.25;
   } else if (!strcmp(model,"*ist D")) {
     height = 2024;
     width  = 3040;
@@ -3209,6 +3193,9 @@ coolpix:
     } else if (!strcasecmp(model,"DCS Pro 14n")) {
       pre_mul[1] = 1.0191;
       pre_mul[2] = 1.1567;
+    } else if (!strcasecmp(model,"DCS Pro SLR/n")) {
+      pre_mul[0] = 1.168;
+      pre_mul[2] = 1.230;
     }
     switch (tiff_data_compression) {
       case 0:				/* No compression */
@@ -3564,7 +3551,7 @@ int main(int argc, char **argv)
   if (argc == 1)
   {
     fprintf (stderr,
-    "\nRaw Photo Decoder \"dcraw\" v5.72"
+    "\nRaw Photo Decoder \"dcraw\" v5.73"
     "\nby Dave Coffin, dcoffin a cybercom o net"
     "\n\nUsage:  %s [options] file1 file2 ...\n"
     "\nValid options:"
