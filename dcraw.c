@@ -1,5 +1,5 @@
 /*
-   Canon PowerShot 600 Converter v0.86
+   Canon PowerShot A5 Converter v0.86
 
    by Dave Coffin (dcoffin at shore dot net)
 
@@ -23,7 +23,7 @@
 /* Use these to adjust the final color balance */
 
 #define RED_MUL 1.0
-#define GRN_MUL 0.6
+#define GRN_MUL 1.0
 #define BLU_MUL 1.0
 
 /* Default values, which may be modified on the command line */
@@ -43,8 +43,8 @@ typedef unsigned char uchar;
 
 /* This 4MB array holds the GMCY values for each pixel */
 
-#define H 613
-#define W 854
+#define H 776
+#define W 960
 ushort gmcy[H][W][4];
 
 /* Creates a new filename with a different extension */
@@ -63,14 +63,14 @@ exten(char *new, const char *old, const char *ext)
    The pattern is:
 
 	  0 1 2 3 4 5
-	0 G M G M G M		Return values
-	1 C Y C Y C Y		 0  1  2  3
-	2 M G M G M G		 G  M  C  Y
-	3 C Y C Y C Y
+	0 C Y C Y C Y		Return values
+	1 G M G M G M		 0  1  2  3
+	2 C Y C Y C Y		 G  M  C  Y
+	3 M G M G M G
 */
 
 #define filter(row,col) \
-	(0xe1e4 >> ((((row) << 1 & 6) + ((col) & 1)) << 1) & 3)
+	(0x1e4e >> ((((row) << 1 & 6) + ((col) & 1)) << 1) & 3)
 
 /*
    Load CCD pixel values into the gmcy[] array.  Unknown colors
@@ -78,9 +78,9 @@ exten(char *new, const char *old, const char *ext)
 */
 read_crw(const char *fname)
 {
-  uchar  data[1120], *dp;
-  ushort pixel[896], *pix;
-  int fd, irow, orow, col;
+  uchar  data[1240], *dp;
+  ushort pixel[992], *pix;
+  int fd, row, col;
 
   fd = open(fname,O_RDONLY | O_BINARY);
   if (fd < 0)
@@ -90,9 +90,9 @@ read_crw(const char *fname)
 /* Check the header to confirm this is a CRW file */
 
   read (fd, data, 26);
-  if (memcmp(data,"MM",2) || memcmp(data+6,"HEAPCCDR",8))
+  if (memcmp(data,"II",2) || memcmp(data+6,"HEAPCCDR",8))
   {
-    fprintf(stderr,"%s is not a Canon PowerShot 600 file.\n",fname);
+    fprintf(stderr,"%s is not a Canon PowerShot A5 file.\n",fname);
     return 0;
   }
 
@@ -101,37 +101,31 @@ read_crw(const char *fname)
 #endif
 
 /*
-   Immediately after the 26-byte header come the data rows.  First
-   the even rows 0..612, then the odd rows 1..611.  Each row is 896
-   pixels, ten bits per pixel, packed into 1120 bytes (8960 bits).
+   Immediately after the 26-byte header come the data rows.
+   Each row is 992 pixels, ten bits each, packed into 1240 bytes.
 */
-
-  for (irow=orow=0; irow < H; irow++)
+  for (row=0; row < H; row++)
   {
-    read (fd, data, 1120);
-    for (dp=data, pix=pixel; dp < data+1120; dp+=10, pix+=8)
+    read(fd,data,1240);
+    for (dp=data, pix=pixel; dp < data+1200; dp+=10, pix+=8)
     {
-      pix[0] = (dp[0] << 2) + (dp[1] >> 6    );
-      pix[1] = (dp[2] << 2) + (dp[1] >> 4 & 3);
-      pix[2] = (dp[3] << 2) + (dp[1] >> 2 & 3);
-      pix[3] = (dp[4] << 2) + (dp[1]      & 3);
-      pix[4] = (dp[5] << 2) + (dp[9]      & 3);
-      pix[5] = (dp[6] << 2) + (dp[9] >> 2 & 3);
-      pix[6] = (dp[7] << 2) + (dp[9] >> 4 & 3);
-      pix[7] = (dp[8] << 2) + (dp[9] >> 6    );
+      pix[0] = (dp[1] << 2) + (dp[0] >> 6);
+      pix[1] = (dp[0] << 4) + (dp[3] >> 4);
+      pix[2] = (dp[3] << 6) + (dp[2] >> 2);
+      pix[3] = (dp[2] << 8) + (dp[5]     );
+      pix[4] = (dp[4] << 2) + (dp[7] >> 6);
+      pix[5] = (dp[7] << 4) + (dp[6] >> 4);
+      pix[6] = (dp[6] << 6) + (dp[9] >> 2);
+      pix[7] = (dp[9] << 8) + (dp[8]     );
     }
-
 /*
-   Copy 854 pixels into the gmcy[] array.  The other 42 pixels
+   Copy 960 pixels into the gmcy[] array.  The other 32 pixels
    are blank.  Left-shift by 4 for extra precision in upcoming
    calculations.
 */
-    memset(gmcy[orow], 0, W*8);		/* Set row to zero */
+    memset(gmcy[row], 0, W*8);		/* Set row to zero */
     for (col=0; col < W; col++)
-      gmcy[orow][col][filter(orow,col)] = pixel[col] << 4;
-
-    if ((orow+=2) > H)	      /* Once we've read all the even rows, */
-      orow = 1;			/* read the odd rows. */
+      gmcy[row][col][filter(row,col)] = (pixel[col] & 0x3f0) << 4;
   }
   close(fd);
   return 1;			/* Success */
@@ -261,8 +255,8 @@ write_ppm(char *fname)
   int histo[512], total;
   char p6head[32];
 
-/* Use this to remove an annoying horizontal pattern */
-  float ymul[4]={ 0.9866, 1.0, 1.0125, 1.0 };
+/* Use this to remove annoying horizontal patterns */
+  float ymul[4]={ 1.0, 1.0, 1.0, 1.0 };
 
 #ifdef DEBUG
   fprintf(stderr,"First pass RGB...\n");
@@ -345,7 +339,7 @@ main(int argc, char **argv)
   if (argc == 1)
   {
     fprintf(stderr,
-    "\nCanon PowerShot 600 Converter v0.86"
+    "\nCanon PowerShot A5 Converter v0.86"
     "\nby Dave Coffin (dcoffin@shore.net)"
     "\n\nUsage:  %s [options] file1.crw file2.crw ...\n"
     "\nValid options:"
