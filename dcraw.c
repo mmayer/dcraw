@@ -1839,10 +1839,10 @@ void scale_colors()
     if (dmin > 0)
       for (c=0; c < colors; c++)
 	pre_mul[c] = dmax / sum[c];
-    else if (camera_red && camera_blue && colors == 3) {
+    else if (camera_red && camera_blue) {
       pre_mul[0] = camera_red;
-      pre_mul[1] = 1.0;
       pre_mul[2] = camera_blue;
+      pre_mul[1] = pre_mul[3] = 1.0;
     } else
       fprintf (stderr, "%s: Cannot use camera white balance.\n", ifname);
   }
@@ -2186,7 +2186,7 @@ void nef_parse_makernote()
   order = sorder;
 }
 
-void nef_parse_exif()
+void mrw_parse_makernote(int base)
 {
   int entries, tag, type, len, val, save;
 
@@ -2197,9 +2197,33 @@ void nef_parse_exif()
     len  = fget4(ifp);
     val  = fget4(ifp);
     save = ftell(ifp);
-    if (tag == 0x927c && !strncmp(make,"NIKON",5)) {
-      fseek (ifp, val, SEEK_SET);
-      nef_parse_makernote();
+    if (tag == 3) {
+      fseek (ifp, base+val + 112, SEEK_SET);
+      camera_red  = fget4(ifp);
+      camera_red /= (camera_blue = fget4(ifp));
+      camera_blue = fget4(ifp) / camera_blue;
+    }
+    fseek (ifp, save, SEEK_SET);
+  }
+}
+
+void nef_parse_exif(int base)
+{
+  int entries, tag, type, len, val, save;
+
+  entries = fget2(ifp);
+  while (entries--) {
+    tag  = fget2(ifp);
+    type = fget2(ifp);
+    len  = fget4(ifp);
+    val  = fget4(ifp);
+    save = ftell(ifp);
+    if (tag == 0x927c) {
+      fseek (ifp, val+base, SEEK_SET);
+      if (!strncmp(make,"NIKON",5))
+	nef_parse_makernote();
+      else if (strstr(make,"Minolta"))
+	mrw_parse_makernote(base);
       fseek (ifp, save, SEEK_SET);
     }
   }
@@ -2266,7 +2290,7 @@ void parse_tiff(int base)
 	    tiff_parse_subifd(base);
 	  break;
 	case 0x8769:			/* Nikon EXIF tag */
-	  nef_parse_exif();
+	  nef_parse_exif(base);
 	  break;
       }
       fseek (ifp, save, SEEK_SET);
@@ -2343,7 +2367,8 @@ void parse_ciff(int offset, int length)
     if (type == 0x102a) {		/* Find the White Balance index */
       fseek (ifp, aoff+14, SEEK_SET);	/* 0=auto, 1=daylight, 2=cloudy ... */
       wbi = fget2(ifp);
-      if (!strcmp(model,"Canon EOS DIGITAL REBEL") && wbi == 6)
+      if (((!strcmp(model,"Canon EOS DIGITAL REBEL") ||
+	    !strcmp(model,"Canon EOS 300D DIGITAL"))) && wbi == 6)
 	wbi++;
     }
     if (type == 0x102c) {		/* Get white balance (G2) */
@@ -3184,9 +3209,6 @@ coolpix:
     } else if (!strcasecmp(model,"DCS Pro 14n")) {
       pre_mul[1] = 1.0191;
       pre_mul[2] = 1.1567;
-    } else if (!strcasecmp(model,"DCS Pro SLR/n")) {
-      pre_mul[0] = 1.168;
-      pre_mul[2] = 1.230;
     }
     switch (tiff_data_compression) {
       case 0:				/* No compression */
@@ -3542,7 +3564,7 @@ int main(int argc, char **argv)
   if (argc == 1)
   {
     fprintf (stderr,
-    "\nRaw Photo Decoder \"dcraw\" v5.71"
+    "\nRaw Photo Decoder \"dcraw\" v5.72"
     "\nby Dave Coffin, dcoffin a cybercom o net"
     "\n\nUsage:  %s [options] file1 file2 ...\n"
     "\nValid options:"
