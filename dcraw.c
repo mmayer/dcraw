@@ -1,5 +1,5 @@
 /*
-   Canon PowerShot A5 Converter v0.86
+   Canon PowerShot A5 Converter v0.87
 
    by Dave Coffin (dcoffin at shore dot net)
 
@@ -125,7 +125,7 @@ read_crw(const char *fname)
 */
     memset(gmcy[row], 0, W*8);		/* Set row to zero */
     for (col=0; col < W; col++)
-      gmcy[row][col][filter(row,col)] = (pixel[col] & 0x3f0) << 4;
+      gmcy[row][col][filter(row,col)] = (pixel[col] & 0x3ff) << 4;
   }
   close(fd);
   return 1;			/* Success */
@@ -281,7 +281,7 @@ write_ppm(char *fname)
    Set the maximum to the 96th percentile
 */
   for (val=512, total=0; --val; )
-    if ((total+=histo[val]) > 60000) break;
+    if ((total+=histo[val]) > 90000) break;
   max = val << 10;
   max2 = max*max;
 
@@ -339,7 +339,7 @@ main(int argc, char **argv)
   if (argc == 1)
   {
     fprintf(stderr,
-    "\nCanon PowerShot A5 Converter v0.86"
+    "\nCanon PowerShot A5 Converter v0.87"
     "\nby Dave Coffin (dcoffin@shore.net)"
     "\n\nUsage:  %s [options] file1.crw file2.crw ...\n"
     "\nValid options:"
